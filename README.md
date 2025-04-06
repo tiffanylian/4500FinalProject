@@ -1,3 +1,55 @@
-# 4500FinalProject
+# Music Recommender App
 
-We will explore the intricates between user activity and recommended songs based on nuanced song connections
+**Members:** Lucas Lee, Xiang Chen, Arriella Mafuta, Tiffany Lian  
+**Repo:** https://github.com/tiffanylian/4500FinalProject
+
+## Motivation
+
+Spotify’s recommendation system has become less effective and TikTok dominates music discovery. We aim to build a robust alternative that suggests new songs based on a user’s existing playlists and preferences.
+
+## Core Features
+
+- **Recommendation System:**  
+  Suggest songs given specific artists, genres, or tracks the user already listens to.  
+- **UI & Search:**  
+  Clean, intuitive interface; song/artist statistics; search functionality.
+
+## Optional Features
+
+- **Spotify API Integration:**  
+  Connect to a user’s Spotify playlist and generate recommendations based on it.
+
+## Pages
+
+- **Home:**  
+  Navbar linking all functions; brief description of the app.  
+- **Top Songs:**  
+  Displays global all‑time top tracks and top tracks from the last month.  
+- **Song:**  
+  User selects a track; view personalized recommendations.  
+- **Artist:**  
+  User selects an artist; view similar artists and recommended songs.  
+- **Genre:**  
+  View song recommendations by preferred genre.  
+- **Search:**  
+  Search for songs by name, artist, genre, etc.  
+
+## Directory Structure
+
+4500FinalProject/ ├── client/ ← Holds the React frontend application.
+│ ├── node_modules/
+│ ├── public/
+│ ├── src/
+│ ├── .gitignore
+│ ├── package.json
+│ └── package-lock.json
+├── server/ ← Contains the Node.js/Express backend.
+│ ├── tests/
+│ ├── coverage/
+│ ├── node_modules/
+│ ├── config.json
+│ ├── routes.js
+│ ├── server.js
+│ ├── package.json
+│ └── package-lock.json
+└── README.md ← Project Description, Directory Structure, Set-up Instructions.
