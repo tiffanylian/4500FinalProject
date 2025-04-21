@@ -34,22 +34,9 @@ Spotify’s recommendation system has become less effective and TikTok dominates
 - **Search:**  
   Search for songs by name, artist, genre, etc.  
 
-## Directory Structure
+## Directory Description
 
-4500FinalProject/ ├── client/ ← Holds the React frontend application.
-│ ├── node_modules/
-│ ├── public/
-│ ├── src/
-│ ├── .gitignore
-│ ├── package.json
-│ └── package-lock.json
-├── server/ ← Contains the Node.js/Express backend.
-│ ├── tests/
-│ ├── coverage/
-│ ├── node_modules/
-│ ├── config.json
-│ ├── routes.js
-│ ├── server.js
-│ ├── package.json
-│ └── package-lock.json
-└── README.md ← Project Description, Directory Structure, Set-up Instructions.
+4500FinalProject/
+client/ ← Holds the React frontend application.
+server/ ← Contains the Node.js/Express backend.
+README.md ← Project Description, Directory Structure, Set-up Instructions.

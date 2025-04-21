@@ -1,0 +1,9 @@
+{
+  "rds_host": "group-35-database-1.c38yfradqbpa.us-east-1.rds.amazonaws.com",
+  "rds_port": "5432",
+  "rds_user": "postgres",
+  "rds_password": "spotifydataset",
+  "rds_db": "spotify_tracks_db",
+  "server_host": "localhost",
+  "server_port": "8080"
+}
