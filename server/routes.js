@@ -52,23 +52,20 @@ const top_songs = async (req, res) => {
   let paramIndex = 1;
 
   let query = `
-    SELECT t.track_id, 
-           t.name AS track_name, 
-           STRING_AGG(DISTINCT a.name, ', ') AS artists, 
-           COUNT(DISTINCT pt.playlist_id) AS playlist_count
-    FROM tracks_import t
-    JOIN artists a ON t.artist_id = a.artist_id
-    JOIN playlists_import pt ON t.track_id = pt.track_id
+    SELECT track_id, 
+           track_name, 
+           artists, 
+           playlist_count
+    FROM mv_top_songs
   `;
 
   if (year) {
-    query += ` WHERE t.year = $${paramIndex}`;
+    query += ` WHERE year = $${paramIndex}`;
     values.push(year);
     paramIndex++;
   }
 
   query += `
-    GROUP BY t.track_id, t.name
     ORDER BY playlist_count DESC
     LIMIT $${paramIndex}
   `;
@@ -87,21 +84,17 @@ const top_albums = async (req, res) => {
   let paramIndex = 1;
 
   let query = `
-    SELECT al.album_id, al.name AS album_name, ar.name AS artist_name, COUNT(pt.playlist_id) AS playlist_count
-    FROM albums al
-    JOIN artists ar ON al.artist_id = ar.artist_id
-    JOIN tracks_import t ON al.album_id = t.album_id
-    JOIN playlists_import pt ON t.track_id = pt.track_id
+    SELECT album_id, album_name, artist_name, playlist_count, year
+    FROM mv_top_albums
   `;
 
   if (year) {
-    query += ` WHERE t.year = $${paramIndex}`;
+    query += ` WHERE year = $${paramIndex}`;
     values.push(year);
     paramIndex++;
   }
 
   query += `
-    GROUP BY al.album_id, al.name, ar.name
     ORDER BY playlist_count DESC
     LIMIT $${paramIndex}
   `;
