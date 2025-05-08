@@ -160,23 +160,19 @@ const search_albums = async (req, res) => {
   const values = [];
 
   if (name) {
-    conditions.push(`al.name ILIKE $${values.length + 1}`);
+    conditions.push(`album_name ILIKE $${values.length + 1}`);
     values.push(`%${name}%`);
   }
   if (artist) {
-    conditions.push(`ar.name ILIKE $${values.length + 1}`);
+    conditions.push(`artist_name ILIKE $${values.length + 1}`);
     values.push(`%${artist}%`);
   }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const query = `
-    SELECT al.album_id as album_id, al.name AS album_name, ar.name AS artist_name, COUNT(DISTINCT pt.playlist_id) AS playlist_count
-    FROM albums al
-    JOIN artists ar ON al.artist_id = ar.artist_id
-    JOIN tracks_import t ON al.album_id = t.album_id
-    JOIN playlists_import pt ON t.track_id = pt.track_id
+    SELECT album_id, album_name, artist_name, playlist_count
+    FROM mv_search_albums
     ${whereClause}
-    GROUP BY al.album_id, al.name, ar.name
     ORDER BY playlist_count DESC
     LIMIT $${values.length + 1}
   `;
@@ -193,11 +189,9 @@ const search_playlists = async (req, res) => {
   const nameFilter = `%${name}%`;
 
   const query = `
-    SELECT p.playlist_id, p.name, COUNT(pt.track_id) AS song_count, p.followers
-    FROM playlists p
-    JOIN playlists_import pt ON p.playlist_id = pt.playlist_id
-    WHERE p.name ILIKE $1
-    GROUP BY p.playlist_id, p.name, p.followers
+    SELECT playlist_id, name, song_count, followers
+    FROM v_search_playlists
+    WHERE name ILIKE $1
     ORDER BY followers DESC
     LIMIT $2
   `;
@@ -212,7 +206,6 @@ const recommend_song_on_song = async (req, res) => {
   let { track_id, name, limit = 10 } = req.query;
 
   try {
-    // Resolve track_id if only name is provided
     if (!track_id && name) {
       track_id = await resolve_name_to_id(name, 'song');
       if (!track_id) {
@@ -221,29 +214,38 @@ const recommend_song_on_song = async (req, res) => {
     }
 
     const query = `
-      SELECT t2.track_id, 
-             t2.name,
-             STRING_AGG(DISTINCT a.name, ', ') AS artist_names,
-        (t1.danceability * t2.danceability +
-         t1.energy * t2.energy +
-         t1.liveness * t2.liveness +
-         t1.key * t2.key +
-         t1.loudness * t2.loudness +
-         t1.speechiness * t2.speechiness +
-         t1.acousticness * t2.acousticness +
-         t1.valence * t2.valence +
-         t1.tempo * t2.tempo) /
-        (NULLIF(SQRT(POWER(t1.danceability,2) + POWER(t1.energy,2) + POWER(t1.liveness,2) +
-                    POWER(t1.key,2) + POWER(t1.loudness,2) + POWER(t1.speechiness,2) +
-                    POWER(t1.acousticness,2) + POWER(t1.valence,2) + POWER(t1.tempo,2)), 0) *
-         NULLIF(SQRT(POWER(t2.danceability,2) + POWER(t2.energy,2) + POWER(t2.liveness,2) +
-                    POWER(t2.key,2) + POWER(t2.loudness,2) + POWER(t2.speechiness,2) +
-                    POWER(t2.acousticness,2) + POWER(t2.valence,2) + POWER(t2.tempo,2)), 0)) AS similarity
-      FROM tracks_import t1
-      JOIN tracks_import t2 ON t1.track_id <> t2.track_id
-      JOIN artists a ON t2.artist_id = a.artist_id
-      WHERE t1.track_id = $1
-      GROUP BY t2.track_id, t2.name, similarity
+      WITH t1 AS (
+        SELECT *, SQRT(POWER(danceability,2) + POWER(energy,2) + POWER(liveness,2) +
+                       POWER(key,2) + POWER(loudness,2) + POWER(speechiness,2) +
+                       POWER(acousticness,2) + POWER(valence,2) + POWER(tempo,2)) AS norm
+        FROM tracks_import
+        WHERE track_id = $1
+      ),
+      t2 AS (
+        SELECT t.*, a.name AS artist_name,
+               SQRT(POWER(t.danceability,2) + POWER(t.energy,2) + POWER(t.liveness,2) +
+                    POWER(t.key,2) + POWER(t.loudness,2) + POWER(t.speechiness,2) +
+                    POWER(t.acousticness,2) + POWER(t.valence,2) + POWER(t.tempo,2)) AS norm
+        FROM tracks_import t
+        JOIN artists a ON t.artist_id = a.artist_id
+        WHERE t.track_id <> $1
+      )
+      SELECT t2.track_id, t2.name,
+             STRING_AGG(t2.artist_name, ', ') AS artist_names,
+             (t1.danceability * t2.danceability +
+              t1.energy * t2.energy +
+              t1.liveness * t2.liveness +
+              t1.key * t2.key +
+              t1.loudness * t2.loudness +
+              t1.speechiness * t2.speechiness +
+              t1.acousticness * t2.acousticness +
+              t1.valence * t2.valence +
+              t1.tempo * t2.tempo) / (NULLIF(t1.norm, 0) * NULLIF(t2.norm, 0)) AS similarity
+      FROM t1, t2
+      GROUP BY t2.track_id, t2.name, t1.danceability, t1.energy, t1.liveness, t1.key,
+               t1.loudness, t1.speechiness, t1.acousticness, t1.valence, t1.tempo,
+               t1.norm, t2.danceability, t2.energy, t2.liveness, t2.key, t2.loudness,
+               t2.speechiness, t2.acousticness, t2.valence, t2.tempo, t2.norm
       ORDER BY similarity DESC
       LIMIT $2;
     `;
@@ -271,41 +273,40 @@ const recommend_song_on_artist = async (req, res) => {
     }
 
     const query = `
-      WITH artist_avg AS (
-        SELECT AVG(danceability) AS danceability,
-               AVG(energy) AS energy,
-               AVG(liveness) AS liveness,
-               AVG(key) AS key,
-               AVG(loudness) AS loudness,
-               AVG(speechiness) AS speechiness,
-               AVG(acousticness) AS acousticness,
-               AVG(valence) AS valence,
-               AVG(tempo) AS tempo
-        FROM tracks_import
+      WITH aa AS (
+        SELECT artist_id, danceability, energy, liveness, key, loudness,
+               speechiness, acousticness, valence, tempo,
+               SQRT(POWER(danceability,2) + POWER(energy,2) + POWER(liveness,2) +
+                    POWER(key,2) + POWER(loudness,2) + POWER(speechiness,2) +
+                    POWER(acousticness,2) + POWER(valence,2) + POWER(tempo,2)) AS norm
+        FROM mv_artist_avg_attributes
         WHERE artist_id = $1
+      ),
+      t AS (
+        SELECT ti.*, a.name AS artist_name,
+               SQRT(POWER(ti.danceability,2) + POWER(ti.energy,2) + POWER(ti.liveness,2) +
+                    POWER(ti.key,2) + POWER(ti.loudness,2) + POWER(ti.speechiness,2) +
+                    POWER(ti.acousticness,2) + POWER(ti.valence,2) + POWER(ti.tempo,2)) AS norm
+        FROM tracks_import ti
+        JOIN artists a ON ti.artist_id = a.artist_id
+        WHERE ti.artist_id <> $1
       )
-      SELECT t.track_id, 
-             t.name, 
-             STRING_AGG(DISTINCT a.name, ', ') AS artist_names,
-        (t.danceability * artist_avg.danceability +
-         t.energy * artist_avg.energy +
-         t.liveness * artist_avg.liveness +
-         t.key * artist_avg.key +
-         t.loudness * artist_avg.loudness +
-         t.speechiness * artist_avg.speechiness +
-         t.acousticness * artist_avg.acousticness +
-         t.valence * artist_avg.valence +
-         t.tempo * artist_avg.tempo) /
-        (NULLIF(SQRT(POWER(t.danceability,2) + POWER(t.energy,2) + POWER(t.liveness,2) +
-                    POWER(t.key,2) + POWER(t.loudness,2) + POWER(t.speechiness,2) +
-                    POWER(t.acousticness,2) + POWER(t.valence,2) + POWER(t.tempo,2)), 0) *
-         NULLIF(SQRT(POWER(artist_avg.danceability,2) + POWER(artist_avg.energy,2) + POWER(artist_avg.liveness,2) +
-                    POWER(artist_avg.key,2) + POWER(artist_avg.loudness,2) + POWER(artist_avg.speechiness,2) +
-                    POWER(artist_avg.acousticness,2) + POWER(artist_avg.valence,2) + POWER(artist_avg.tempo,2)), 0)) AS similarity
-      FROM tracks_import t
-      JOIN artists a ON t.artist_id = a.artist_id, artist_avg
-      WHERE t.artist_id <> $1
-      GROUP BY t.track_id, t.name, similarity
+      SELECT t.track_id, t.name,
+             STRING_AGG(t.artist_name, ', ') AS artist_names,
+             (t.danceability * aa.danceability +
+              t.energy * aa.energy +
+              t.liveness * aa.liveness +
+              t.key * aa.key +
+              t.loudness * aa.loudness +
+              t.speechiness * aa.speechiness +
+              t.acousticness * aa.acousticness +
+              t.valence * aa.valence +
+              t.tempo * aa.tempo) / (NULLIF(t.norm, 0) * NULLIF(aa.norm, 0)) AS similarity
+      FROM t, aa
+      GROUP BY t.track_id, t.name, t.danceability, t.energy, t.liveness, t.key,
+               t.loudness, t.speechiness, t.acousticness, t.valence, t.tempo, t.norm,
+               aa.danceability, aa.energy, aa.liveness, aa.key, aa.loudness, aa.speechiness,
+               aa.acousticness, aa.valence, aa.tempo, aa.norm
       ORDER BY similarity DESC
       LIMIT $2;
     `;
@@ -324,7 +325,6 @@ const recommend_song_on_playlist = async (req, res) => {
   let { playlist_id, name, limit = 10 } = req.query;
 
   try {
-    // Resolve playlist_id if only name is provided
     if (!playlist_id && name) {
       playlist_id = await resolve_name_to_id(name, 'playlist');
       if (!playlist_id) {
@@ -334,49 +334,44 @@ const recommend_song_on_playlist = async (req, res) => {
 
     const query = `
       WITH playlist_avg AS (
-        SELECT AVG(t.danceability) AS danceability,
-               AVG(t.energy) AS energy,
-               AVG(t.liveness) AS liveness,
-               AVG(t.key) AS key,
-               AVG(t.loudness) AS loudness,
-               AVG(t.speechiness) AS speechiness,
-               AVG(t.acousticness) AS acousticness,
-               AVG(t.valence) AS valence,
-               AVG(t.tempo) AS tempo
-        FROM playlists_import pt
-        JOIN tracks_import t ON pt.track_id = t.track_id
-        WHERE pt.playlist_id = $1
+        SELECT *
+        FROM mv_playlist_avg_attributes
+        WHERE playlist_id = $1
       )
-      SELECT t.track_id, 
-             t.name, 
+      SELECT t.track_id,
+             t.name,
              STRING_AGG(DISTINCT a.name, ', ') AS artist_names,
-        (t.danceability * playlist_avg.danceability +
-         t.energy * playlist_avg.energy +
-         t.liveness * playlist_avg.liveness +
-         t.key * playlist_avg.key +
-         t.loudness * playlist_avg.loudness +
-         t.speechiness * playlist_avg.speechiness +
-         t.acousticness * playlist_avg.acousticness +
-         t.valence * playlist_avg.valence +
-         t.tempo * playlist_avg.tempo) /
+        (t.danceability * pa.avg_danceability +
+         t.energy * pa.avg_energy +
+         t.liveness * pa.avg_liveness +
+         t.key * pa.avg_key +
+         t.loudness * pa.avg_loudness +
+         t.speechiness * pa.avg_speechiness +
+         t.acousticness * pa.avg_acousticness +
+         t.valence * pa.avg_valence +
+         t.tempo * pa.avg_tempo) /
         (NULLIF(SQRT(POWER(t.danceability,2) + POWER(t.energy,2) + POWER(t.liveness,2) +
                     POWER(t.key,2) + POWER(t.loudness,2) + POWER(t.speechiness,2) +
                     POWER(t.acousticness,2) + POWER(t.valence,2) + POWER(t.tempo,2)), 0) *
-         NULLIF(SQRT(POWER(playlist_avg.danceability,2) + POWER(playlist_avg.energy,2) + POWER(playlist_avg.liveness,2) +
-                    POWER(playlist_avg.key,2) + POWER(playlist_avg.loudness,2) + POWER(playlist_avg.speechiness,2) +
-                    POWER(playlist_avg.acousticness,2) + POWER(playlist_avg.valence,2) + POWER(playlist_avg.tempo,2)), 0)) AS similarity
+         NULLIF(SQRT(POWER(pa.avg_danceability,2) + POWER(pa.avg_energy,2) + POWER(pa.avg_liveness,2) +
+                    POWER(pa.avg_key,2) + POWER(pa.avg_loudness,2) + POWER(pa.avg_speechiness,2) +
+                    POWER(pa.avg_acousticness,2) + POWER(pa.avg_valence,2) + POWER(pa.avg_tempo,2)), 0)) AS similarity
       FROM tracks_import t
-      JOIN artists a ON t.artist_id = a.artist_id, playlist_avg
+      JOIN artists a ON t.artist_id = a.artist_id
+      CROSS JOIN playlist_avg pa
       WHERE t.track_id NOT IN (
         SELECT track_id FROM playlists_import WHERE playlist_id = $1
       )
-      GROUP BY t.track_id, t.name, similarity
+      GROUP BY t.track_id, t.name, pa.avg_danceability, pa.avg_energy, pa.avg_liveness,
+               pa.avg_key, pa.avg_loudness, pa.avg_speechiness, pa.avg_acousticness,
+               pa.avg_valence, pa.avg_tempo,
+               t.danceability, t.energy, t.liveness, t.key, t.loudness, t.speechiness,
+               t.acousticness, t.valence, t.tempo
       ORDER BY similarity DESC
       LIMIT $2;
     `;
 
     const values = [playlist_id, limit];
-
     const result = await connection.query(query, values);
     res.json(result.rows);
   } catch (err) {
@@ -397,49 +392,34 @@ const recommend_playlist_on_song = async (req, res) => {
     const query = `
       WITH song_attributes AS (
         SELECT danceability, energy, liveness, key, loudness,
-               speechiness, acousticness, valence, tempo
+               speechiness, acousticness, valence, tempo,
+               SQRT(POWER(danceability,2) + POWER(energy,2) + POWER(liveness,2) +
+                    POWER(key,2) + POWER(loudness,2) + POWER(speechiness,2) +
+                    POWER(acousticness,2) + POWER(valence,2) + POWER(tempo,2)) AS norm
         FROM tracks_import
         WHERE track_id = $1
-      ),
-      playlist_attributes AS (
-        SELECT p.playlist_id, p.name,
-               AVG(t.danceability) AS danceability,
-               AVG(t.energy) AS energy,
-               AVG(t.liveness) AS liveness,
-               AVG(t.key) AS key,
-               AVG(t.loudness) AS loudness,
-               AVG(t.speechiness) AS speechiness,
-               AVG(t.acousticness) AS acousticness,
-               AVG(t.valence) AS valence,
-               AVG(t.tempo) AS tempo
-        FROM playlists p
-        JOIN playlists_import pt ON p.playlist_id = pt.playlist_id
-        JOIN tracks_import t ON pt.track_id = t.track_id
-        WHERE NOT EXISTS (
-          SELECT 1
-          FROM playlists_import pt_check
-          WHERE pt_check.playlist_id = p.playlist_id
-            AND pt_check.track_id = $1
-        )
-        GROUP BY p.playlist_id, p.name
       )
       SELECT pa.playlist_id, pa.name,
-        (pa.danceability * sa.danceability +
-         pa.energy * sa.energy +
-         pa.liveness * sa.liveness +
-         pa.key * sa.key +
-         pa.loudness * sa.loudness +
-         pa.speechiness * sa.speechiness +
-         pa.acousticness * sa.acousticness +
-         pa.valence * sa.valence +
-         pa.tempo * sa.tempo) /
-        (NULLIF(SQRT(POWER(pa.danceability,2) + POWER(pa.energy,2) + POWER(pa.liveness,2) +
-                    POWER(pa.key,2) + POWER(pa.loudness,2) + POWER(pa.speechiness,2) +
-                    POWER(pa.acousticness,2) + POWER(pa.valence,2) + POWER(pa.tempo,2)), 0) *
-         NULLIF(SQRT(POWER(sa.danceability,2) + POWER(sa.energy,2) + POWER(sa.liveness,2) +
-                    POWER(sa.key,2) + POWER(sa.loudness,2) + POWER(sa.speechiness,2) +
-                    POWER(sa.acousticness,2) + POWER(sa.valence,2) + POWER(sa.tempo,2)), 0)) AS similarity
-      FROM playlist_attributes pa, song_attributes sa
+        (pa.avg_danceability * sa.danceability +
+         pa.avg_energy * sa.energy +
+         pa.avg_liveness * sa.liveness +
+         pa.avg_key * sa.key +
+         pa.avg_loudness * sa.loudness +
+         pa.avg_speechiness * sa.speechiness +
+         pa.avg_acousticness * sa.acousticness +
+         pa.avg_valence * sa.valence +
+         pa.avg_tempo * sa.tempo) /
+        (NULLIF(SQRT(POWER(pa.avg_danceability,2) + POWER(pa.avg_energy,2) + POWER(pa.avg_liveness,2) +
+                    POWER(pa.avg_key,2) + POWER(pa.avg_loudness,2) + POWER(pa.avg_speechiness,2) +
+                    POWER(pa.avg_acousticness,2) + POWER(pa.avg_valence,2) + POWER(pa.avg_tempo,2)), 0) *
+         NULLIF(sa.norm, 0)) AS similarity
+      FROM mv_playlist_avg_attributes pa, song_attributes sa
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM playlists_import pt_check
+        WHERE pt_check.playlist_id = pa.playlist_id
+          AND pt_check.track_id = $1
+      )
       ORDER BY similarity DESC
       LIMIT $2;
     `;
@@ -528,55 +508,46 @@ const artist_stats = async (req, res) => {
   }
 
   const query = `
-    WITH artist_info AS (
-      SELECT a.artist_id, a.name
-      FROM artists a
-      WHERE a.artist_id = $1
-    ),
-    top_song AS (
-      SELECT t.track_id, t.name, COUNT(pt.playlist_id) AS playlist_count
-      FROM tracks_import t
-      JOIN playlists_import pt ON t.track_id = pt.track_id
-      WHERE t.artist_id = $1
-      GROUP BY t.track_id, t.name
-      ORDER BY playlist_count DESC
-      LIMIT 1
-    ),
-    stats_by_year AS (
-      SELECT t.year,
-             AVG(t.danceability) AS avg_danceability,
-             AVG(t.energy) AS avg_energy,
-             AVG(t.valence) AS avg_valence,
-             AVG(t.acousticness) AS avg_acousticness,
-             AVG(t.loudness) AS avg_loudness,
-             COUNT(pt.playlist_id) AS playlist_count
-      FROM tracks_import t
-      LEFT JOIN playlists_import pt ON t.track_id = pt.track_id
-      WHERE t.artist_id = $1
-      GROUP BY t.year
-      ORDER BY t.year
-    ),
-    overall_stats AS (
-      SELECT AVG(t.danceability) AS danceability,
-             AVG(t.energy) AS energy,
-             AVG(t.valence) AS valence,
-             AVG(t.acousticness) AS acousticness,
-             AVG(t.loudness) AS loudness
-      FROM tracks_import t
-      WHERE t.artist_id = $1
-    )
-    SELECT ai.artist_id, ai.name AS artist_name,
-           (SELECT json_build_object('track_id', ts.track_id, 'name', ts.name, 'playlist_count', ts.playlist_count)
-            FROM top_song ts),
-           (SELECT json_agg(sy) FROM stats_by_year sy),
-           (SELECT CASE
-               WHEN os.valence > 0.7 AND os.energy > 0.6 THEN 'happy'
-               WHEN os.valence < 0.3 AND os.energy < 0.5 THEN 'sad'
-               WHEN os.acousticness > 0.7 AND os.energy < 0.4 THEN 'chill'
-               WHEN os.energy > 0.7 AND os.danceability > 0.6 THEN 'hype'
-               ELSE 'unknown'
-           END FROM overall_stats os) AS inferred_mood
-    FROM artist_info ai;
+    WITH track_stats AS (
+  SELECT
+    t.artist_id,
+    t.track_id,
+    t.name AS track_name,
+    t.year,
+    t.danceability,
+    t.energy,
+    t.valence,
+    t.acousticness,
+    t.loudness,
+    COUNT(pt.playlist_id) AS playlist_count
+  FROM tracks_import t
+  LEFT JOIN playlists_import pt ON t.track_id = pt.track_id
+  WHERE t.artist_id = $1
+  GROUP BY t.artist_id, t.track_id, t.name, t.year, t.danceability, t.energy, t.valence, t.acousticness, t.loudness
+),
+top_song AS (
+  SELECT track_id, track_name, playlist_count
+  FROM track_stats
+  ORDER BY playlist_count DESC
+  LIMIT 1
+),
+stats_by_year AS (
+  SELECT year,
+         AVG(danceability) AS avg_danceability,
+         AVG(energy) AS avg_energy,
+         AVG(valence) AS avg_valence,
+         AVG(acousticness) AS avg_acousticness,
+         AVG(loudness) AS avg_loudness,
+         SUM(playlist_count) AS playlist_count
+  FROM track_stats
+  GROUP BY year
+)
+SELECT a.artist_id, a.name AS artist_name,
+       (SELECT json_build_object('track_id', ts.track_id, 'name', ts.track_name, 'playlist_count', ts.playlist_count)
+        FROM top_song ts) AS top_song,
+       (SELECT json_agg(sy) FROM stats_by_year sy) AS stats_by_year
+FROM artists a
+WHERE a.artist_id = $1;
   `;
 
   try {
@@ -588,59 +559,6 @@ const artist_stats = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to resolve artist name or run query' });
-  }
-};
-
-const recommend_playlists_by_mood = async (req, res) => {
-  const { mood, limit = 10 } = req.query;
-
-  const moodConditions = {
-    happy: 'pf.avg_valence > 0.7 AND pf.avg_energy > 0.6',
-    sad: 'pf.avg_valence < 0.3 AND pf.avg_energy < 0.5',
-    chill: 'pf.avg_acousticness > 0.7 AND pf.avg_energy < 0.4',
-    hype: 'pf.avg_energy > 0.7 AND pf.avg_danceability > 0.6',
-  };
-
-  if (!moodConditions[mood]) {
-    return res.status(400).json({
-      error: 'Invalid mood. Available moods: happy, sad, chill, hype',
-    });
-  }
-
-  const query = `
-    WITH playlist_features AS (
-      SELECT p.playlist_id, p.name, p.followers,
-             AVG(t.danceability) AS avg_danceability,
-             AVG(t.energy) AS avg_energy,
-             AVG(t.liveness) AS avg_liveness,
-             AVG(t.key) AS avg_key,
-             AVG(t.loudness) AS avg_loudness,
-             AVG(t.speechiness) AS avg_speechiness,
-             AVG(t.acousticness) AS avg_acousticness,
-             AVG(t.valence) AS avg_valence,
-             AVG(t.tempo) AS avg_tempo,
-             COUNT(pt.track_id) AS song_count
-      FROM playlists p
-      JOIN playlists_import pt ON p.playlist_id = pt.playlist_id
-      JOIN tracks_import t ON pt.track_id = t.track_id
-      GROUP BY p.playlist_id, p.name, p.followers
-    )
-    SELECT pf.playlist_id, pf.name, pf.followers, pf.song_count,
-           pf.avg_danceability, pf.avg_energy, pf.avg_liveness,
-           pf.avg_key, pf.avg_loudness, pf.avg_speechiness,
-           pf.avg_acousticness, pf.avg_valence, pf.avg_tempo
-    FROM playlist_features pf
-    WHERE ${moodConditions[mood]}
-    ORDER BY pf.followers DESC
-    LIMIT $1;
-  `;
-
-  try {
-    const result = await connection.query(query, [limit]);
-    res.json(result.rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Database query failed' });
   }
 };
 
@@ -658,5 +576,4 @@ module.exports = {
   recommend_playlist_on_song,
   recommend_artists_by_similarity,
   artist_stats,
-  recommend_playlists_by_mood,
 };
