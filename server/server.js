@@ -20,10 +20,11 @@ app.get('/search_playlists', routes.search_playlists);
 app.get('/recommend_song_on_song', routes.recommend_song_on_song);
 app.get('/recommend_song_on_artist', routes.recommend_song_on_artist);
 app.get('/recommend_song_on_playlist', routes.recommend_song_on_playlist);
+app.get('/recommend_playlist_on_song', routes.recommend_playlist_on_song);
+app.get('/recommend_artists_by_similarity', routes.recommend_artists_by_similarity);
 
-app.get('/underrated_tracks', routes.underrated_tracks);
 app.get('/artist_stats', routes.artist_stats);
-app.get('/trending_artists', routes.trending_artists);
+app.get('/recommend_playlists_by_mood', routes.recommend_playlists_by_mood);
 
 app.listen(config.server_port, () => {
   console.log(`Server running at http://${config.server_host}:${config.server_port}/`)
