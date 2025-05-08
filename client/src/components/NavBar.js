@@ -18,7 +18,7 @@ function NavText({ href, text, isMain }) {
       <NavLink
         to={href}
         style={{
-          color: 'inherit',
+          color: 'white',
           textDecoration: 'none',
         }}
       >
@@ -36,9 +36,9 @@ export default function NavBar() {
     <AppBar position='static'>
       <Container maxWidth='xl'>
         <Toolbar disableGutters>
-          <NavText href='/' text='SWIFTIFY' isMain />
-          <NavText href='/albums' text='ALBUMS' />
-          <NavText href='/songs' text='SONGS' />
+          <NavText href='/' text='Spotify Recommendation App!' isMain />
+          <NavText href='/' text='Home' />
+          <NavText href='/recommendation' text='Recommendations' />
         </Toolbar>
       </Container>
     </AppBar>

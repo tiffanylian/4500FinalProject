@@ -170,7 +170,7 @@ const search_albums = async (req, res) => {
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const query = `
-    SELECT al.album_id, al.name AS album_name, ar.name AS artist_name, COUNT(DISTINCT pt.playlist_id) AS playlist_count
+    SELECT al.album_id as album_id, al.name AS album_name, ar.name AS artist_name, COUNT(DISTINCT pt.playlist_id) AS playlist_count
     FROM albums al
     JOIN artists ar ON al.artist_id = ar.artist_id
     JOIN tracks_import t ON al.album_id = t.album_id
