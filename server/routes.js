@@ -126,29 +126,23 @@ const search_songs = async (req, res) => {
   const values = [];
 
   if (name) {
-    conditions.push(`t.name ILIKE $${values.length + 1}`);
+    conditions.push(`track_name ILIKE $${values.length + 1}`);
     values.push(`%${name}%`);
   }
   if (artist) {
-    conditions.push(`a.name ILIKE $${values.length + 1}`);
+    conditions.push(`artist_name ILIKE $${values.length + 1}`);
     values.push(`%${artist}%`);
   }
   if (year) {
-    conditions.push(`t.year = $${values.length + 1}`);
+    conditions.push(`year = $${values.length + 1}`);
     values.push(year);
   }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const query = `
-    SELECT t.track_id, 
-           t.name AS track_name, 
-           STRING_AGG(DISTINCT a.name, ', ') AS artist_names, 
-           COUNT(DISTINCT pt.playlist_id) AS playlist_count
-    FROM tracks_import t
-    JOIN artists a ON t.artist_id = a.artist_id
-    JOIN playlists_import pt ON t.track_id = pt.track_id
+    SELECT track_id, track_name, artist_name, playlist_count
+    FROM mv_search_songs
     ${whereClause}
-    GROUP BY t.track_id, t.name
     ORDER BY playlist_count DESC
     LIMIT $${values.length + 1}
   `;
