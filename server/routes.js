@@ -14,6 +14,30 @@ const connection = new Pool({
 
 connection.connect((err) => err && console.error(err));
 
+const resolve_name_to_id = async (name, type) => {
+  let query, idField;
+  
+  if (type === 'artist') {
+    query = `SELECT artist_id FROM artists WHERE name ILIKE $1 LIMIT 1`;
+    idField = 'artist_id';
+  } else if (type === 'song') {
+    query = `SELECT track_id FROM tracks_import WHERE name ILIKE $1 LIMIT 1`;
+    idField = 'track_id';
+  } else if (type === 'playlist') {
+    query = `SELECT playlist_id FROM playlists WHERE name ILIKE $1 LIMIT 1`;
+    idField = 'playlist_id';
+  } else {
+    throw new Error('Invalid type');
+  }
+
+  const result = await connection.query(query, [`%${name}%`]);
+  if (result.rows.length === 0) {
+    throw new Error('No match found');
+  }
+
+  return result.rows[0][idField];
+};
+
 const home = async (req, res) => {
   res.json({
     authors: ['Arriella Mafuta', 'Xiang Chen', 'Lucas Lee', 'Tiffany Lian'],
@@ -25,6 +49,7 @@ const top_songs = async (req, res) => {
   const limit = parseInt(req.query.limit) || 20;
   const year = req.query.year;
   const values = [];
+  let paramIndex = 1;
 
   let query = `
     SELECT t.track_id, 
@@ -35,14 +60,17 @@ const top_songs = async (req, res) => {
     JOIN artists a ON t.artist_id = a.artist_id
     JOIN playlists_import pt ON t.track_id = pt.track_id
   `;
+
   if (year) {
-    query += ` WHERE t.year = $1`;
+    query += ` WHERE t.year = $${paramIndex}`;
     values.push(year);
+    paramIndex++;
   }
+
   query += `
     GROUP BY t.track_id, t.name
     ORDER BY playlist_count DESC
-    LIMIT $${values.length + 1}
+    LIMIT $${paramIndex}
   `;
   values.push(limit);
 
@@ -56,6 +84,7 @@ const top_albums = async (req, res) => {
   const year = req.query.year;
   const limit = parseInt(req.query.limit) || 20;
   const values = [];
+  let paramIndex = 1;
 
   let query = `
     SELECT al.album_id, al.name AS album_name, ar.name AS artist_name, COUNT(pt.playlist_id) AS playlist_count
@@ -64,14 +93,17 @@ const top_albums = async (req, res) => {
     JOIN tracks_import t ON al.album_id = t.album_id
     JOIN playlists_import pt ON t.track_id = pt.track_id
   `;
+
   if (year) {
-    query += ` WHERE t.year = $1`;
+    query += ` WHERE t.year = $${paramIndex}`;
     values.push(year);
+    paramIndex++;
   }
+
   query += `
     GROUP BY al.album_id, al.name, ar.name
     ORDER BY playlist_count DESC
-    LIMIT $${values.length + 1}
+    LIMIT $${paramIndex}
   `;
   values.push(limit);
 
@@ -190,41 +222,55 @@ const search_playlists = async (req, res) => {
 };
 
 const recommend_song_on_song = async (req, res) => {
-  const { track_id, limit = 10 } = req.query;
+  let { track_id, name, limit = 10 } = req.query;
 
-  const query = `
-    SELECT t2.track_id, 
-           t2.name,
-           STRING_AGG(DISTINCT a.name, ', ') AS artist_names,
-      (t1.danceability * t2.danceability +
-       t1.energy * t2.energy +
-       t1.liveness * t2.liveness +
-       t1.key * t2.key +
-       t1.loudness * t2.loudness +
-       t1.speechiness * t2.speechiness +
-       t1.acousticness * t2.acousticness +
-       t1.valence * t2.valence +
-       t1.tempo * t2.tempo) /
-      (NULLIF(SQRT(POWER(t1.danceability,2) + POWER(t1.energy,2) + POWER(t1.liveness,2) +
-                  POWER(t1.key,2) + POWER(t1.loudness,2) + POWER(t1.speechiness,2) +
-                  POWER(t1.acousticness,2) + POWER(t1.valence,2) + POWER(t1.tempo,2)), 0) *
-       NULLIF(SQRT(POWER(t2.danceability,2) + POWER(t2.energy,2) + POWER(t2.liveness,2) +
-                  POWER(t2.key,2) + POWER(t2.loudness,2) + POWER(t2.speechiness,2) +
-                  POWER(t2.acousticness,2) + POWER(t2.valence,2) + POWER(t2.tempo,2)), 0)) AS similarity
-    FROM tracks_import t1
-    JOIN tracks_import t2 ON t1.track_id <> t2.track_id
-    JOIN artists a ON t2.artist_id = a.artist_id
-    WHERE t1.track_id = $1
-    GROUP BY t2.track_id, t2.name, similarity
-    ORDER BY similarity DESC
-    LIMIT $2;
-  `;
+  try {
+    // Resolve track_id if only name is provided
+    if (!track_id && name) {
+      track_id = await resolve_name_to_id(name, 'song');
+      if (!track_id) {
+        return res.status(404).json({ error: 'Song not found' });
+      }
+    }
 
-  connection.query(query, [track_id, limit], (err, data) => {
-    if (err) res.status(500).json({ error: 'Database query failed' });
-    else res.json(data.rows);
-  });
+    const query = `
+      SELECT t2.track_id, 
+             t2.name,
+             STRING_AGG(DISTINCT a.name, ', ') AS artist_names,
+        (t1.danceability * t2.danceability +
+         t1.energy * t2.energy +
+         t1.liveness * t2.liveness +
+         t1.key * t2.key +
+         t1.loudness * t2.loudness +
+         t1.speechiness * t2.speechiness +
+         t1.acousticness * t2.acousticness +
+         t1.valence * t2.valence +
+         t1.tempo * t2.tempo) /
+        (NULLIF(SQRT(POWER(t1.danceability,2) + POWER(t1.energy,2) + POWER(t1.liveness,2) +
+                    POWER(t1.key,2) + POWER(t1.loudness,2) + POWER(t1.speechiness,2) +
+                    POWER(t1.acousticness,2) + POWER(t1.valence,2) + POWER(t1.tempo,2)), 0) *
+         NULLIF(SQRT(POWER(t2.danceability,2) + POWER(t2.energy,2) + POWER(t2.liveness,2) +
+                    POWER(t2.key,2) + POWER(t2.loudness,2) + POWER(t2.speechiness,2) +
+                    POWER(t2.acousticness,2) + POWER(t2.valence,2) + POWER(t2.tempo,2)), 0)) AS similarity
+      FROM tracks_import t1
+      JOIN tracks_import t2 ON t1.track_id <> t2.track_id
+      JOIN artists a ON t2.artist_id = a.artist_id
+      WHERE t1.track_id = $1
+      GROUP BY t2.track_id, t2.name, similarity
+      ORDER BY similarity DESC
+      LIMIT $2;
+    `;
+
+    connection.query(query, [track_id, limit], (err, data) => {
+      if (err) res.status(500).json({ error: 'Database query failed' });
+      else res.json(data.rows);
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to resolve song name or run query' });
+  }
 };
+
 
 const recommend_song_on_artist = async (req, res) => {
   const { artist_id, limit = 10 } = req.query;
