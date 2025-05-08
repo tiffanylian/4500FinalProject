@@ -27,20 +27,20 @@ const top_songs = async (req, res) => {
   const values = [];
 
   let query = `
-    SELECT t.id, 
+    SELECT t.track_id, 
            t.name AS track_name, 
            STRING_AGG(DISTINCT a.name, ', ') AS artists, 
            COUNT(DISTINCT pt.playlist_id) AS playlist_count
     FROM tracks_import t
     JOIN artists a ON t.artist_id = a.artist_id
-    JOIN playlists_import pt ON t.id = pt.track_id
+    JOIN playlists_import pt ON t.track_id = pt.track_id
   `;
   if (year) {
     query += ` WHERE t.year = $1`;
     values.push(year);
   }
   query += `
-    GROUP BY t.id, t.name
+    GROUP BY t.track_id, t.name
     ORDER BY playlist_count DESC
     LIMIT $${values.length + 1}
   `;
@@ -62,7 +62,7 @@ const top_albums = async (req, res) => {
     FROM albums al
     JOIN artists ar ON al.artist_id = ar.artist_id
     JOIN tracks_import t ON al.album_id = t.album_id
-    JOIN playlists_import pt ON t.id = pt.track_id
+    JOIN playlists_import pt ON t.track_id = pt.track_id
   `;
   if (year) {
     query += ` WHERE t.year = $1`;
@@ -115,12 +115,15 @@ const search_songs = async (req, res) => {
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const query = `
-    SELECT t.id, t.name AS track_name, a.name AS artist_name, COUNT(DISTINCT pt.playlist_id) AS playlist_count
+    SELECT t.track_id, 
+           t.name AS track_name, 
+           STRING_AGG(DISTINCT a.name, ', ') AS artist_names, 
+           COUNT(DISTINCT pt.playlist_id) AS playlist_count
     FROM tracks_import t
     JOIN artists a ON t.artist_id = a.artist_id
-    JOIN playlists_import pt ON t.id = pt.track_id
+    JOIN playlists_import pt ON t.track_id = pt.track_id
     ${whereClause}
-    GROUP BY t.id, t.name, a.name
+    GROUP BY t.track_id, t.name
     ORDER BY playlist_count DESC
     LIMIT $${values.length + 1}
   `;
@@ -152,7 +155,7 @@ const search_albums = async (req, res) => {
     FROM albums al
     JOIN artists ar ON al.artist_id = ar.artist_id
     JOIN tracks_import t ON al.album_id = t.album_id
-    JOIN playlists_import pt ON t.id = pt.track_id
+    JOIN playlists_import pt ON t.track_id = pt.track_id
     ${whereClause}
     GROUP BY al.album_id, al.name, ar.name
     ORDER BY playlist_count DESC
@@ -190,7 +193,9 @@ const recommend_song_on_song = async (req, res) => {
   const { track_id, limit = 10 } = req.query;
 
   const query = `
-    SELECT t2.id, t2.name,
+    SELECT t2.track_id, 
+           t2.name,
+           STRING_AGG(DISTINCT a.name, ', ') AS artist_names,
       (t1.danceability * t2.danceability +
        t1.energy * t2.energy +
        t1.liveness * t2.liveness +
@@ -206,8 +211,11 @@ const recommend_song_on_song = async (req, res) => {
        NULLIF(SQRT(POWER(t2.danceability,2) + POWER(t2.energy,2) + POWER(t2.liveness,2) +
                   POWER(t2.key,2) + POWER(t2.loudness,2) + POWER(t2.speechiness,2) +
                   POWER(t2.acousticness,2) + POWER(t2.valence,2) + POWER(t2.tempo,2)), 0)) AS similarity
-    FROM tracks_import t1, tracks_import t2
-    WHERE t1.id = $1 AND t1.id <> t2.id
+    FROM tracks_import t1
+    JOIN tracks_import t2 ON t1.track_id <> t2.track_id
+    JOIN artists a ON t2.artist_id = a.artist_id
+    WHERE t1.track_id = $1
+    GROUP BY t2.track_id, t2.name, similarity
     ORDER BY similarity DESC
     LIMIT $2;
   `;
@@ -235,7 +243,9 @@ const recommend_song_on_artist = async (req, res) => {
       FROM tracks_import
       WHERE artist_id = $1
     )
-    SELECT t.id, t.name, a.name AS artist,
+    SELECT t.track_id, 
+           t.name, 
+           STRING_AGG(DISTINCT a.name, ', ') AS artist_names,
       (t.danceability * artist_avg.danceability +
        t.energy * artist_avg.energy +
        t.liveness * artist_avg.liveness +
@@ -254,6 +264,7 @@ const recommend_song_on_artist = async (req, res) => {
     FROM tracks_import t
     JOIN artists a ON t.artist_id = a.artist_id, artist_avg
     WHERE t.artist_id <> $1
+    GROUP BY t.track_id, t.name, similarity
     ORDER BY similarity DESC
     LIMIT $2;
   `;
@@ -284,10 +295,12 @@ const recommend_song_on_playlist = async (req, res) => {
              AVG(t.valence) AS valence,
              AVG(t.tempo) AS tempo
       FROM playlists_import pt
-      JOIN tracks_import t ON pt.track_id = t.id
+      JOIN tracks_import t ON pt.track_id = t.track_id
       WHERE pt.playlist_id = $1
     )
-    SELECT t.id, t.name, a.name AS artist,
+    SELECT t.track_id, 
+           t.name, 
+           STRING_AGG(DISTINCT a.name, ', ') AS artist_names,
       (t.danceability * playlist_avg.danceability +
        t.energy * playlist_avg.energy +
        t.liveness * playlist_avg.liveness +
@@ -305,9 +318,10 @@ const recommend_song_on_playlist = async (req, res) => {
                   POWER(playlist_avg.acousticness,2) + POWER(playlist_avg.valence,2) + POWER(playlist_avg.tempo,2)), 0)) AS similarity
     FROM tracks_import t
     JOIN artists a ON t.artist_id = a.artist_id, playlist_avg
-    WHERE t.id NOT IN (
+    WHERE t.track_id NOT IN (
       SELECT track_id FROM playlists_import WHERE playlist_id = $1
     )
+    GROUP BY t.track_id, t.name, similarity
     ORDER BY similarity DESC
     LIMIT $2;
   `;
@@ -346,7 +360,7 @@ const recommend_playlist_on_song = async (req, res) => {
              AVG(t.tempo) AS tempo
       FROM playlists p
       JOIN playlists_import pt ON p.playlist_id = pt.playlist_id
-      JOIN tracks_import t ON pt.track_id = t.id
+      JOIN tracks_import t ON pt.track_id = t.track_id
       WHERE NOT EXISTS (
         SELECT 1
         FROM playlists_import pt_check
@@ -459,11 +473,11 @@ const artist_stats = async (req, res) => {
       WHERE a.artist_id = $1
     ),
     top_song AS (
-      SELECT t.id, t.name, COUNT(pt.playlist_id) AS playlist_count
+      SELECT t.track_id, t.name, COUNT(pt.playlist_id) AS playlist_count
       FROM tracks_import t
-      JOIN playlists_import pt ON t.id = pt.track_id
+      JOIN playlists_import pt ON t.track_id = pt.track_id
       WHERE t.artist_id = $1
-      GROUP BY t.id, t.name
+      GROUP BY t.track_id, t.name
       ORDER BY playlist_count DESC
       LIMIT 1
     ),
@@ -476,7 +490,7 @@ const artist_stats = async (req, res) => {
              AVG(t.loudness) AS avg_loudness,
              COUNT(pt.playlist_id) AS playlist_count
       FROM tracks_import t
-      LEFT JOIN playlists_import pt ON t.id = pt.track_id
+      LEFT JOIN playlists_import pt ON t.track_id = pt.track_id
       WHERE t.artist_id = $1
       GROUP BY t.year
       ORDER BY t.year
@@ -491,7 +505,7 @@ const artist_stats = async (req, res) => {
       WHERE t.artist_id = $1
     )
     SELECT ai.artist_id, ai.name AS artist_name,
-           (SELECT json_build_object('track_id', ts.id, 'name', ts.name, 'playlist_count', ts.playlist_count)
+           (SELECT json_build_object('track_id', ts.track_id, 'name', ts.name, 'playlist_count', ts.playlist_count)
             FROM top_song ts),
            (SELECT json_agg(sy) FROM stats_by_year sy),
            (SELECT CASE
@@ -547,7 +561,7 @@ const recommend_playlists_by_mood = async (req, res) => {
              COUNT(pt.track_id) AS song_count
       FROM playlists p
       JOIN playlists_import pt ON p.playlist_id = pt.playlist_id
-      JOIN tracks_import t ON pt.track_id = t.id
+      JOIN tracks_import t ON pt.track_id = t.track_id
       GROUP BY p.playlist_id, p.name, p.followers
     )
     SELECT pf.playlist_id, pf.name, pf.followers, pf.song_count,
