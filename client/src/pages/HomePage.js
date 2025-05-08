@@ -26,10 +26,13 @@ export default function HomePage() {
       .then(res => res.json())
       .then(resJson => setSongOfTheDay(resJson));
 
-    // TODO (TASK 14): add a fetch call to get the app author (name not pennkey) and store the name field in the state variable
-    fetch(`http://${config.server_host}:${config.server_port}/author/name`)
-    .then(res => res.json())
-    .then(resJson => setAppAuthor(resJson.data));
+      fetch(`http://${config.server_host}:${config.server_port}/home`)
+  .then(res => res.json())
+  .then(({ authors }) => {
+    const prettyAuthors = authors.join(', ');
+    setAppAuthor(prettyAuthors);
+  })
+  .catch(err => console.error('Failed to fetch authors:', err));
   }, []);
 
   // Here, we define the columns of the "Top Songs" table. The songColumns variable is an array (in order)
@@ -38,17 +41,16 @@ export default function HomePage() {
   // and an optional renderCell property which given a row returns a custom JSX element to display in the cell.
   const songColumns = [
     {
-      field: 'title',
+      field: 'track_name',
       headerName: 'Song Title',
-      renderCell: (row) => <Link onClick={() => setSelectedSongId(row.song_id)}>{row.title}</Link> // A Link component is used just for formatting purposes
+      renderCell: (row) => <Link onClick={() => setSelectedSongId(row.track_id)}>{row.track_name}</Link> // A Link component is used just for formatting purposes
     },
     {
-      field: 'album',
-      headerName: 'Album Title',
-      renderCell: (row) => <NavLink to={`/albums/${row.album_id}`}>{row.album}</NavLink> // A NavLink component is used to create a link to the album page
+      field: 'artists',
+      headerName: 'Artist Name',
     },
     {
-      field: 'plays',
+      field: 'playlist_count',
       headerName: 'Plays'
     },
   ];
