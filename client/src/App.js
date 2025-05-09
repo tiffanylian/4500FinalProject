@@ -17,6 +17,7 @@ import RecommendArtistsBySimilarityPage from './pages/RecommendArtistsbySimilari
 import SearchSongsPage from './pages/SearchSongsPage.js';
 import SearchAlbumsPage from './pages/SearchAlbumsPage.js';
 import SearchPlaylistsPage from "./pages/SearchPlaylistsPage.js";
+import ArtistStatsPage from "./pages/ArtistStatsPage.js";
 
 
 // createTheme enables you to customize the look and feel of your app past the default
@@ -52,6 +53,7 @@ export default function App() {
           <Route path="/search_songs" element={<SearchSongsPage />} />
           <Route path="/search_albums" element={<SearchAlbumsPage />} />
           <Route path="/search_playlists" element={<SearchPlaylistsPage />} />
+          <Route path="/artist_stats" element={<ArtistStatsPage />} />
         </Routes>
       </BrowserRouter>
     </ThemeProvider>
