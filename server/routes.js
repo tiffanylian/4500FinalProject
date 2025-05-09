@@ -442,54 +442,28 @@ const recommend_artists_by_similarity = async (req, res) => {
     }
 
     const query = `
-      WITH target_avg AS (
-        SELECT AVG(danceability) AS danceability,
-               AVG(energy) AS energy,
-               AVG(liveness) AS liveness,
-               AVG(key) AS key,
-               AVG(loudness) AS loudness,
-               AVG(speechiness) AS speechiness,
-               AVG(acousticness) AS acousticness,
-               AVG(valence) AS valence,
-               AVG(tempo) AS tempo
-        FROM tracks_import
-        WHERE artist_id = $1
-      ),
-      artist_avg AS (
-        SELECT a.artist_id, a.name,
-               AVG(t.danceability) AS danceability,
-               AVG(t.energy) AS energy,
-               AVG(t.liveness) AS liveness,
-               AVG(t.key) AS key,
-               AVG(t.loudness) AS loudness,
-               AVG(t.speechiness) AS speechiness,
-               AVG(t.acousticness) AS acousticness,
-               AVG(t.valence) AS valence,
-               AVG(t.tempo) AS tempo
-        FROM artists a
-        JOIN tracks_import t ON a.artist_id = t.artist_id
-        WHERE a.artist_id <> $1
-        GROUP BY a.artist_id, a.name
-      )
-      SELECT artist_avg.artist_id, artist_avg.name,
-        (artist_avg.danceability * target_avg.danceability +
-         artist_avg.energy * target_avg.energy +
-         artist_avg.liveness * target_avg.liveness +
-         artist_avg.key * target_avg.key +
-         artist_avg.loudness * target_avg.loudness +
-         artist_avg.speechiness * target_avg.speechiness +
-         artist_avg.acousticness * target_avg.acousticness +
-         artist_avg.valence * target_avg.valence +
-         artist_avg.tempo * target_avg.tempo) /
-        (SQRT(POWER(artist_avg.danceability,2) + POWER(artist_avg.energy,2) + POWER(artist_avg.liveness,2) +
-              POWER(artist_avg.key,2) + POWER(artist_avg.loudness,2) + POWER(artist_avg.speechiness,2) +
-              POWER(artist_avg.acousticness,2) + POWER(artist_avg.valence,2) + POWER(artist_avg.tempo,2)) *
-         SQRT(POWER(target_avg.danceability,2) + POWER(target_avg.energy,2) + POWER(target_avg.liveness,2) +
-              POWER(target_avg.key,2) + POWER(target_avg.loudness,2) + POWER(target_avg.speechiness,2) +
-              POWER(target_avg.acousticness,2) + POWER(target_avg.valence,2) + POWER(target_avg.tempo,2))) AS similarity
-      FROM artist_avg, target_avg
-      ORDER BY similarity DESC
-      LIMIT $2;
+SELECT a.artist_id, ar.name,
+  (a.danceability * t.danceability +
+   a.energy * t.energy +
+   a.liveness * t.liveness +
+   a.key * t.key +
+   a.loudness * t.loudness +
+   a.speechiness * t.speechiness +
+   a.acousticness * t.acousticness +
+   a.valence * t.valence +
+   a.tempo * t.tempo) /
+  (NULLIF(SQRT(POWER(a.danceability,2) + POWER(a.energy,2) + POWER(a.liveness,2) +
+              POWER(a.key,2) + POWER(a.loudness,2) + POWER(a.speechiness,2) +
+              POWER(a.acousticness,2) + POWER(a.valence,2) + POWER(a.tempo,2)),0) *
+   NULLIF(SQRT(POWER(t.danceability,2) + POWER(t.energy,2) + POWER(t.liveness,2) +
+              POWER(t.key,2) + POWER(t.loudness,2) + POWER(t.speechiness,2) +
+              POWER(t.acousticness,2) + POWER(t.valence,2) + POWER(t.tempo,2)),0)) AS similarity
+FROM mv_artist_avg_attributes a
+JOIN mv_artist_avg_attributes t ON t.artist_id = $1
+JOIN artists ar ON a.artist_id = ar.artist_id
+WHERE a.artist_id <> $1
+ORDER BY similarity DESC
+LIMIT $2;
     `;
 
     const result = await connection.query(query, [artist_id, limit]);
