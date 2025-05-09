@@ -1,92 +1,161 @@
-import { useEffect, useState } from 'react';
-import { Container, Divider, Link } from '@mui/material';
-import { NavLink } from 'react-router-dom';
-
-import LazyTable from '../components/LazyTable';
-import SongCard from '../components/SongCard';
-const config = require('../config.json');
+import React, { useState, useEffect } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
+import {
+  Container,
+  Grid,
+  Box,
+  Card,
+  CardHeader,
+  CardContent,
+  Typography,
+  Button
+} from '@mui/material';
 
 export default function HomePage() {
-  // We use the setState hook to persist information across renders (such as the result of our API calls)
-  const [songOfTheDay, setSongOfTheDay] = useState({});
-  // TODO (TASK 13): add a state variable to store the app author (default to '')
-  const [appAuthor, setAppAuthor] = useState('');
-  const [selectedSongId, setSelectedSongId] = useState(null);
+  const [topSongs, setTopSongs] = useState([]);
+  const [topAlbums, setTopAlbums] = useState([]);
+  const [topPlaylists, setTopPlaylists] = useState([]);
 
-  // The useEffect hook by default runs the provided callback after every render
-  // The second (optional) argument, [], is the dependency array which signals
-  // to the hook to only run the provided callback if the value of the dependency array
-  // changes from the previous render. In this case, an empty array means the callback
-  // will only run on the very first render.
   useEffect(() => {
-    // Fetch request to get the song of the day. Fetch runs asynchronously.
-    // The .then() method is called when the fetch request is complete
-    // and proceeds to convert the result to a JSON which is finally placed in state.
-    fetch(`http://${config.server_host}:${config.server_port}/random`)
+    fetch('/top_songs')
       .then(res => res.json())
-      .then(resJson => setSongOfTheDay(resJson));
+      .then(data => setTopSongs(data))
+      .catch(console.error);
 
-      fetch(`http://${config.server_host}:${config.server_port}/home`)
-  .then(res => res.json())
-  .then(({ authors }) => {
-    const prettyAuthors = authors.join(', ');
-    setAppAuthor(prettyAuthors);
-  })
-  .catch(err => console.error('Failed to fetch authors:', err));
+    fetch('/top_albums')
+      .then(res => res.json())
+      .then(data => setTopAlbums(data))
+      .catch(console.error);
+
+    fetch('/top_playlists')
+      .then(res => res.json())
+      .then(data => setTopPlaylists(data))
+      .catch(console.error);
   }, []);
 
-  // Here, we define the columns of the "Top Songs" table. The songColumns variable is an array (in order)
-  // of objects with each object representing a column. Each object has a "field" property representing
-  // what data field to display from the raw data, "headerName" property representing the column label,
-  // and an optional renderCell property which given a row returns a custom JSX element to display in the cell.
-  const songColumns = [
-    {
-      field: 'track_name',
-      headerName: 'Song Title',
-      renderCell: (row) => <Link onClick={() => setSelectedSongId(row.track_id)}>{row.track_name}</Link> // A Link component is used just for formatting purposes
-    },
-    {
-      field: 'artists',
-      headerName: 'Artist Name',
-    },
-    {
-      field: 'playlist_count',
-      headerName: 'Plays'
-    },
-  ];
-
-  // TODO (TASK 15): define the columns for the top albums (schema is Album Title, Plays), where Album Title is a link to the album page
-  // Hint: this should be very similar to songColumns defined above, but has 2 columns instead of 3
-  // Hint: recall the schema for an album is different from that of a song (see the API docs for /top_albums). How does that impact the "field" parameter and the "renderCell" function for the album title column?
-  const albumColumns = [
-    {
-      field: 'album_title',
-      headerName: 'Album Title',
-      renderCell: (row) => <NavLink to={`/albums/${row.album_id}`}>{row.title}</NavLink>
-    },
-    {
-      field: 'plays',
-      headerName: 'Plays'
-    }
-  ]
-
   return (
-    <Container>
-      {/* SongCard is a custom component that we made. selectedSongId && <SongCard .../> makes use of short-circuit logic to only render the SongCard if a non-null song is selected */}
-      {selectedSongId && <SongCard songId={selectedSongId} handleClose={() => setSelectedSongId(null)} />}
-      <h2>Check out your song of the day:&nbsp;
-        <Link onClick={() => setSelectedSongId(songOfTheDay.song_id)}>{songOfTheDay.title}</Link>
-      </h2>
-      <Divider />
-      <h2>Top Songs</h2>
-      <LazyTable route={`http://${config.server_host}:${config.server_port}/top_songs`} columns={songColumns} />
-      <Divider />
-      {/* TODO (TASK 16): add a h2 heading, LazyTable, and divider for top albums. Set the LazyTable's props for defaultPageSize to 5 and rowsPerPageOptions to [5, 10] */}
-      <h2>Top Albums</h2>
-      <LazyTable route={`http://${config.server_host}:${config.server_port}/top_albums`} columns={albumColumns} defaultPageSize={5} rowsPerPageOptions={[5, 10]}/>
-      <Divider />
-      {/* TODO (TASK 17): add a paragraph (<p></p>) that displays “Created by [name]” using the name state stored from TASK 13/TASK 14 */}
-      <p>Created by {appAuthor}</p>
+    <Container maxWidth="lg" sx={{ py: 4 }}>
+      {/* Header */}
+      <Box textAlign="center" mb={6}>
+        <Typography variant="h3" component="h1" gutterBottom>
+          SpotRec
+        </Typography>
+        <Typography variant="subtitle1" color="green">
+          Your personalized Spotify-inspired music recommendation hub
+        </Typography>
+      </Box>
+
+      {/* Top Sections */}
+      <Grid container spacing={4} mb={6}>
+        {/* Top Songs */}
+        <Grid item xs={12} md={4}>
+          <Card elevation={3}>
+            <CardHeader title="Top Songs" />
+            <CardContent>
+              {topSongs.slice(0, 5).map(song => (
+                <Typography key={song.id} variant="body2">
+                  {song.track_name} — {song.artists}
+                </Typography>
+              ))}
+              <Box mt={2}>
+                <Button
+                  component={RouterLink}
+                  to="/top_songs"
+                  variant="outlined"
+                  fullWidth
+                >
+                  See All Songs
+                </Button>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Top Albums */}
+        <Grid item xs={12} md={4}>
+          <Card elevation={3}>
+            <CardHeader title="Top Albums" />
+            <CardContent>
+              {topAlbums.slice(0, 5).map(album => (
+                <Typography key={album.id} variant="body2">
+                  {album.album_name} — {album.artists}
+                </Typography>
+              ))}
+              <Box mt={2}>
+                <Button
+                  component={RouterLink}
+                  to="/top_albums"
+                  variant="outlined"
+                  fullWidth
+                >
+                  See All Albums
+                </Button>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Top Playlists */}
+        <Grid item xs={12} md={4}>
+          <Card elevation={3}>
+            <CardHeader title="Top Playlists" />
+            <CardContent>
+              {topPlaylists.slice(0, 5).map(list => (
+                <Typography key={list.id} variant="body2">
+                  {list.name}
+                </Typography>
+              ))}
+              <Box mt={2}>
+                <Button
+                  component={RouterLink}
+                  to="/top_playlists"
+                  variant="outlined"
+                  fullWidth
+                >
+                  See All Playlists
+                </Button>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+
+      {/* Features */}
+      <Box mb={4}>
+        <Typography variant="h5" gutterBottom>
+          Explore Features
+        </Typography>
+        <Grid container spacing={2}>
+          {[
+            { label: 'Search Songs', path: '/search_songs' },
+            { label: 'Search Albums', path: '/search_albums' },
+            { label: 'Search Playlists', path: '/search_playlists' },
+            { label: 'Recommend on Song', path: '/recommend_song_on_song' },
+            { label: 'Recommend on Artist', path: '/recommend_song_on_artist' },
+            { label: 'Song → Playlist Rec', path: '/recommend_song_on_playlist' },
+            { label: 'Artist Similarity', path: '/recommend_artists_by_similarity' },
+            { label: 'Playlists by Mood', path: '/recommend_playlists_by_mood' },
+            { label: 'Artist Stats', path: '/artist_stats' }
+          ].map(item => (
+            <Grid item key={item.path}>
+              <Button
+                component={RouterLink}
+                to={item.path}
+                variant="contained"
+              >
+                {item.label}
+              </Button>
+            </Grid>
+          ))}
+        </Grid>
+      </Box>
+
+      {/* Footer */}
+      <Box textAlign="center" pt={4}>
+        <Typography variant="body2" color="textSecondary">
+          &copy; {new Date().getFullYear()} SpotRec. Made with ❤️ using React & Spotify Data.
+        </Typography>
+      </Box>
     </Container>
   );
-};
+}
