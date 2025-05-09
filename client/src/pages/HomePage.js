@@ -134,7 +134,8 @@ export default function HomePage() {
             { label: 'Recommend on Artist', path: '/recommend_song_on_artist' },
             { label: 'Song → Playlist Rec', path: '/recommend_song_on_playlist' },
             { label: 'Artist Similarity', path: '/recommend_artists_by_similarity' },
-            { label: 'Artist Stats', path: '/artist_stats' }
+            { label: 'Artist Stats', path: '/artist_stats' },
+            {label: 'Happiest Artists', path: '/happiest_artists' }
           ].map(item => (
             <Grid item key={item.path}>
               <Button

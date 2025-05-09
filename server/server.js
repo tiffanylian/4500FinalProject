@@ -24,6 +24,7 @@ app.get('/recommend_playlist_on_song', routes.recommend_playlist_on_song);
 app.get('/recommend_artists_by_similarity', routes.recommend_artists_by_similarity);
 
 app.get('/artist_stats', routes.artist_stats);
+app.get('/happiest_artists', routes.happiest_artists);
 
 app.listen(config.server_port, () => {
   console.log(`Server running at http://${config.server_host}:${config.server_port}/`)

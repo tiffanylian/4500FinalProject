@@ -36,6 +36,11 @@ const recommendations = [
     path: '/recommend_artists_by_similarity',
     description: 'Meet new artists who sound like your favorites.'
   },
+  {
+    label: 'Recommend Happy Artists',
+    path: '/happiest_artists',
+    description: 'Discover artists with the happiest songs.'
+  }
 
 ];
 

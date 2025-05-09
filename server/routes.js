@@ -545,6 +545,89 @@ WHERE a.artist_id = $1;
   }
 };
 
+const happiest_artists = async (req, res) => {
+  // allow client to override how many artists to return
+  const limit = parseInt(req.query.limit, 10) || 5;
+
+  const query = `
+    WITH
+      track_playlist_counts AS (
+        SELECT
+          ti.track_id,
+          ti.artist_id,
+          COUNT(DISTINCT pi.playlist_id) AS playlist_count
+        FROM tracks_import ti
+        LEFT JOIN playlists_import pi
+          ON ti.track_id  = pi.track_id
+         AND ti.artist_id = pi.artist_id
+        GROUP BY ti.track_id, ti.artist_id
+      ),
+
+      artist_stats AS (
+        SELECT
+          ti.artist_id,
+          COUNT(DISTINCT ti.track_id) AS total_tracks
+        FROM tracks_import ti
+        LEFT JOIN track_playlist_counts tpc
+          USING(track_id, artist_id)
+        GROUP BY ti.artist_id
+      ),
+
+      artist_album_valence AS (
+        SELECT
+          ti.artist_id,
+          al.album_id,
+          al.name       AS album_name,
+          AVG(ti.valence) AS avg_valence,
+          RANK() OVER (
+            PARTITION BY ti.artist_id
+            ORDER BY AVG(ti.valence) DESC
+          ) AS valence_rank
+        FROM tracks_import ti
+        JOIN albums al
+          ON ti.album_id = al.album_id
+        GROUP BY ti.artist_id, al.album_id, al.name
+      ),
+
+      artist_top_album AS (
+        SELECT
+          artist_id,
+          album_id,
+          album_name,
+          avg_valence
+        FROM artist_album_valence
+        WHERE valence_rank = 1
+      )
+
+    SELECT
+      a.artist_id,
+      a.name                    AS artist_name,
+      ast.total_tracks,
+      ata.album_id,
+      ata.album_name,
+      ROUND(ata.avg_valence::numeric, 3) AS top_album_valence
+    FROM artist_stats ast
+    JOIN artists a
+      ON ast.artist_id = a.artist_id
+    LEFT JOIN artist_top_album ata
+      ON ast.artist_id = ata.artist_id
+    ORDER BY top_album_valence DESC
+    LIMIT $1;
+  `;
+
+  try {
+    const result = await connection.query(query, [limit]);
+    // if you want a more consistent shape with artist_stats:
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching artist insights', err);
+    res.status(500).json({
+      success: false,
+      error:   'Internal server error'
+    });
+  }
+};
+
 module.exports = {
   home,
   top_songs,
@@ -559,4 +642,5 @@ module.exports = {
   recommend_playlist_on_song,
   recommend_artists_by_similarity,
   artist_stats,
+  happiest_artists
 };
