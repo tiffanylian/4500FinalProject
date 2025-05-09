@@ -1,68 +1,63 @@
 import { useState } from 'react';
 import {
   Container,
+  Typography,
   TextField,
   Button,
   Divider,
-  Link,
   TableContainer,
   Table,
   TableHead,
   TableBody,
   TableRow,
   TableCell,
-  Paper,
-  Typography
+  Paper
 } from '@mui/material';
-import SongCard from '../components/SongCard';
+import { NavLink } from 'react-router-dom';
 const config = require('../config.json');
 
-export default function RecommendPlaylistSongPage() {
-  const [playlistQuery, setPlaylistQuery] = useState('');
-  const [limit, setLimit] = useState(10);
+export default function SearchPlaylistsPage() {
+  const [name, setName] = useState('');
+  const [limit, setLimit] = useState(20);
   const [results, setResults] = useState([]);
-  const [selectedSongId, setSelectedSongId] = useState(null);
 
   const handleSearch = async () => {
-    if (!playlistQuery) return;
+    const params = new URLSearchParams();
+    params.append('name', name);
+    params.append('limit', limit);
+
     try {
       const response = await fetch(
-        `http://${config.server_host}:${config.server_port}/recommend_song_on_playlist?name=${encodeURIComponent(
-          playlistQuery
-        )}&limit=${limit}`
+        `http://${config.server_host}:${config.server_port}/search_playlists?${params.toString()}`
       );
       const data = await response.json();
       setResults(data);
     } catch (error) {
-      console.error('Failed to fetch playlist-based recommendations:', error);
+      console.error('Failed to search playlists:', error);
     }
   };
 
   return (
     <Container sx={{ mt: 4 }}>
-      {selectedSongId && (
-        <SongCard songId={selectedSongId} handleClose={() => setSelectedSongId(null)} />
-      )}
-
       <Typography variant="h4" gutterBottom>
-        Recommend Songs Based on Playlist
+        Search Playlists
       </Typography>
 
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', marginBottom: 16 }}>
         <TextField
           label="Playlist Name"
-          value={playlistQuery}
-          onChange={(e) => setPlaylistQuery(e.target.value)}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
           fullWidth
         />
         <TextField
           label="Limit"
           type="number"
           value={limit}
-          onChange={(e) => setLimit(parseInt(e.target.value, 10) || 10)}
+          onChange={(e) => setLimit(parseInt(e.target.value, 10) || 20)}
           sx={{ width: 100 }}
         />
-        <Button variant="contained" onClick={handleSearch}>
+        <Button variant="contained" onClick={handleSearch} sx={{ height: 40 }}>
           Search
         </Button>
       </div>
@@ -74,21 +69,24 @@ export default function RecommendPlaylistSongPage() {
           <Table>
             <TableHead>
               <TableRow>
-                <TableCell>Song Title</TableCell>
-                <TableCell>Artists</TableCell>
-                <TableCell align="right">Similarity</TableCell>
+                <TableCell>Playlist Name</TableCell>
+                <TableCell align="right">Song Count</TableCell>
+                <TableCell align="right">Followers</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {results.map((row) => (
-                <TableRow key={row.track_id} hover sx={{ cursor: 'pointer' }}>
+                <TableRow key={row.playlist_id} hover>
                   <TableCell>
-                    <Link onClick={() => setSelectedSongId(row.track_id)}>
+                    <NavLink
+                      to={`/playlists/${row.playlist_id}`}
+                      style={{ textDecoration: 'none', color: 'inherit' }}
+                    >
                       {row.name}
-                    </Link>
+                    </NavLink>
                   </TableCell>
-                  <TableCell>{row.artist_names}</TableCell>
-                  <TableCell align="right">{row.similarity}</TableCell>
+                  <TableCell align="right">{row.song_count}</TableCell>
+                  <TableCell align="right">{row.followers}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
